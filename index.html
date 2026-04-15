@@ -366,6 +366,75 @@
       sheet.getCell('AW28').value = `2차 필터링 ${longTitle}`;
     }
 
+    function toNumericCellValue(cell) {
+      const value = cell?.value;
+
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+      }
+
+      if (value && typeof value === 'object') {
+        if (typeof value.result === 'number' && Number.isFinite(value.result)) {
+          return value.result;
+        }
+        if (typeof value.richText === 'object' && Array.isArray(value.richText)) {
+          const joined = value.richText.map(x => x.text || '').join('').replace(/,/g, '');
+          const num = Number(joined);
+          return Number.isFinite(num) ? num : 0;
+        }
+      }
+
+      if (typeof value === 'string') {
+        const cleaned = value.replace(/,/g, '').trim();
+        const num = Number(cleaned);
+        return Number.isFinite(num) ? num : 0;
+      }
+
+      return 0;
+    }
+
+    function colToLetter(col) {
+      let temp = col;
+      let letter = '';
+      while (temp > 0) {
+        let rem = (temp - 1) % 26;
+        letter = String.fromCharCode(65 + rem) + letter;
+        temp = Math.floor((temp - 1) / 26);
+      }
+      return letter;
+    }
+
+    function applySummaryRowWithFormulaAndResult(sheet, startCol, dataStartRow, dataEndRow, totalRow) {
+      // 블록 내 D~K 상대 위치 = +3 ~ +10
+      for (let offset = 3; offset <= 10; offset++) {
+        const col = startCol + offset;
+        const colLetter = colToLetter(col);
+        let sum = 0;
+
+        for (let r = dataStartRow; r <= dataEndRow; r++) {
+          sum += toNumericCellValue(sheet.getCell(r, col));
+        }
+
+        sheet.getCell(totalRow, col).value = {
+          formula: `SUM(${colLetter}${dataStartRow}:${colLetter}${dataEndRow})`,
+          result: sum
+        };
+      }
+    }
+
+    function refreshAllSummaryRows(sheet) {
+      // 숏 영역
+      applySummaryRowWithFormulaAndResult(sheet, 1, 4, 26, 27);   // A 블록
+      applySummaryRowWithFormulaAndResult(sheet, 29, 4, 26, 27);  // AC 블록
+      applySummaryRowWithFormulaAndResult(sheet, 49, 4, 26, 27);  // AW 블록
+
+      // 롱 영역
+      applySummaryRowWithFormulaAndResult(sheet, 1, 30, 52, 53);   // A 블록
+      applySummaryRowWithFormulaAndResult(sheet, 29, 30, 52, 53);  // AC 블록
+      applySummaryRowWithFormulaAndResult(sheet, 49, 30, 52, 53);  // AW 블록
+    }
+
+
 
 
     function getLastUsedRow(sheet) {
@@ -605,6 +674,12 @@
         const lossSummaryFile = document.getElementById('lossSummaryFile').files[0];
         logs.push(await applyLossSummaryFile(lossSummaryFile, templateSheet));
 
+        refreshAllSummaryRows(templateSheet);
+        if (templateWorkbook.calcProperties) {
+          templateWorkbook.calcProperties.fullCalcOnLoad = true;
+          templateWorkbook.calcProperties.forceFullCalc = true;
+        }
+
         setStatus('새 엑셀 파일 생성 중...');
 
         const outputBuffer = await templateWorkbook.xlsx.writeBuffer();
@@ -625,7 +700,7 @@
         setStatus(
           '완료되었습니다.\n\n' +
           logs.join('\n') +
-          '\n\n기본 템플릿 사용 / % 자동 표기 / 손절요약 전체복붙 + 빨간 글씨 우선 + 손절횟수 내림차순 정리까지 적용되었습니다.'
+          '\n\n기본 템플릿 사용 / % 자동 표기 / 손절요약 전체복붙 + 빨간 글씨 우선 + 손절횟수 내림차순 정리 + 합계 행 표시까지 적용되었습니다.'
         );
       } catch (error) {
         console.error(error);
