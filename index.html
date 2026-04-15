@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>통합 결과 엑셀 자동 배치기</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --line: #334155;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #22c55e;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: linear-gradient(180deg, #0b1220 0%, #0f172a 100%);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+    }
+    h1 { margin: 0 0 10px; font-size: 32px; }
+    .sub {
+      color: var(--muted);
+      line-height: 1.65;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: rgba(17, 24, 39, 0.96);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 20px;
+      margin-bottom: 18px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+    input[type="text"],
+    input[type="number"],
+    input[type="file"] {
+      width: 100%;
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid #475569;
+      border-radius: 12px;
+      padding: 12px 14px;
+      outline: none;
+    }
+    input[type="file"] { padding: 10px; }
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 6px;
+      line-height: 1.6;
+    }
+    .warn {
+      color: #fdba74;
+      font-weight: 700;
+    }
+    .section-title {
+      font-size: 20px;
+      margin: 0 0 14px;
+      color: white;
+    }
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 13px 18px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      color: white;
+      background: #2563eb;
+    }
+    button.secondary { background: #475569; }
+    button.success { background: var(--accent); color: #052e16; }
+    button:hover { opacity: .95; }
+    .status {
+      white-space: pre-line;
+      background: #0b1220;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 14px;
+      color: #dbeafe;
+      line-height: 1.7;
+      min-height: 90px;
+      margin-top: 16px;
+    }
+    .mapping {
+      overflow-x: auto;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #d1d5db;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #334155;
+      padding: 10px 12px;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th { background: #172554; }
+    td { background: #111827; }
+    code {
+      background: #0b1220;
+      padding: 2px 6px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+    }
+    @media (max-width: 900px) {
+      .grid, .grid-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>통합 결과 엑셀 자동 배치기</h1>
+    <div class="sub">
+      6개의 결과 파일과 1개의 전체 결과 템플릿을 넣으면, 지정한 위치에 자동으로 붙여 넣고
+      제목 / 방어폭 / 예상손절금도 함께 바꾼 뒤 새 엑셀 파일로 내려받는 도구입니다.<br>
+      추가로 <b>손절요약 파일 1개</b>를 넣으면, 전체 / 손절 1·0개 / 손절 0개 블록도 자동으로 채웁니다.
+    </div>
+
+    <div class="card">
+      <h2 class="section-title">1) 기본 값 입력</h2>
+      <div class="grid-3">
+        <div>
+          <label for="lDefense">L방어폭 숫자</label>
+          <input id="lDefense" type="text" value="50.73%" />
+        </div>
+        <div>
+          <label for="sDefense">S방어폭 숫자</label>
+          <input id="sDefense" type="text" value="79.59%" />
+        </div>
+        <div>
+          <label for="expectedLoss">예상손절금 숫자</label>
+          <input id="expectedLoss" type="text" value="2394" />
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top:14px;">
+        <div>
+          <label for="shortTitle">숏 제목</label>
+          <input id="shortTitle" type="text" value="15DCA-20S v1.0.1" />
+          <div class="hint">
+            적용 위치: <code>A2</code> / <code>AC2</code> / <code>AW2</code><br>
+            필터링 블록은 자동으로
+            <b>1차 필터링 {숏 제목}</b>, <b>2차 필터링 {숏 제목}</b> 형태로 들어갑니다.
+          </div>
+        </div>
+        <div>
+          <label for="longTitle">롱 제목</label>
+          <input id="longTitle" type="text" value="15DCA-20L v1.0.1" />
+          <div class="hint">
+            적용 위치: <code>A28</code> / <code>AC28</code> / <code>AW28</code><br>
+            필터링 블록은 자동으로
+            <b>1차 필터링 {롱 제목}</b>, <b>2차 필터링 {롱 제목}</b> 형태로 들어갑니다.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title">2) 파일 업로드</h2>
+      <div class="grid">
+        <div>
+          <label for="templateFile">전체 결과 템플릿 파일</label>
+          <input id="templateFile" type="file" accept=".xlsx,.xlsm,.xls" />
+          <div class="hint">예: 전체 결과.xlsx</div>
+        </div>
+        <div>
+          <label for="lossSummaryFile">손절요약 파일</label>
+          <input id="lossSummaryFile" type="file" accept=".xlsx,.xlsm,.xls" />
+          <div class="hint">
+            예: 손절요약_날짜정렬.xlsx<br>
+            이 파일은 왼쪽 전체 / 가운데 손절 1,0개 / 오른쪽 손절 0개 블록을 자동으로 채웁니다.
+          </div>
+        </div>
+        <div>
+          <label for="shortTotalFile">숏 전체결과 파일</label>
+          <input id="shortTotalFile" type="file" accept=".xlsx,.xlsm,.xls" />
+        </div>
+        <div>
+          <label for="short1File">숏 1차 최적화 파일</label>
+          <input id="short1File" type="file" accept=".xlsx,.xlsm,.xls" />
+        </div>
+        <div>
+          <label for="short2File">숏 2차 최적화 파일</label>
+          <input id="short2File" type="file" accept=".xlsx,.xlsm,.xls" />
+        </div>
+        <div>
+          <label for="longTotalFile">롱 전체결과 파일</label>
+          <input id="longTotalFile" type="file" accept=".xlsx,.xlsm,.xls" />
+        </div>
+        <div>
+          <label for="long1File">롱 1차 최적화 파일</label>
+          <input id="long1File" type="file" accept=".xlsx,.xlsm,.xls" />
+        </div>
+        <div>
+          <label for="long2File">롱 2차 최적화 파일</label>
+          <input id="long2File" type="file" accept=".xlsx,.xlsm,.xls" />
+        </div>
+      </div>
+
+      <div class="hint" style="margin-top:14px;">
+        6개 결과 파일은 각 파일의 <b>첫 번째 시트</b>에서 <b>1~2행, A~L</b>을 읽어 옵니다.<br>
+        붙여넣기 위치는 네가 확인해준 대로 <b>A~L / AC~AN / AW~BH</b> 기준으로 처리합니다.
+      </div>
+      <div class="hint warn">
+        손절요약 파일은 왼쪽 블록에 <b>A~H 전체</b>, 가운데 블록에 <b>손절횟수 1,0개 행만 A~D</b>,
+        오른쪽 블록에 <b>손절횟수 0개 행만 A~B</b>를 넣도록 만들었습니다.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title">3) 붙여넣기 매핑</h2>
+      <div class="mapping">
+        <table>
+          <thead>
+            <tr>
+              <th>업로드 파일</th>
+              <th>읽는 범위</th>
+              <th>붙여넣는 위치</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>숏 전체결과</td><td>1~2행 / A~L</td><td>A3:L4</td></tr>
+            <tr><td>숏 1차 최적화</td><td>1~2행 / A~L</td><td>AC3:AN4</td></tr>
+            <tr><td>숏 2차 최적화</td><td>1~2행 / A~L</td><td>AW3:BH4</td></tr>
+            <tr><td>롱 전체결과</td><td>1~2행 / A~L</td><td>A29:L30</td></tr>
+            <tr><td>롱 1차 최적화</td><td>1~2행 / A~L</td><td>AC29:AN30</td></tr>
+            <tr><td>롱 2차 최적화</td><td>1~2행 / A~L</td><td>AW29:BH30</td></tr>
+            <tr><td>손절요약 파일</td><td>전체 A~H / 필터된 A~D / 필터된 A~B</td><td>O3:V끝 / AQ3:AT끝 / BJ3:BK끝</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="btn-row">
+        <button class="success" id="runBtn">엑셀 생성하기</button>
+        <button class="secondary" id="fillSampleBtn" type="button">입력값 샘플로 되돌리기</button>
+      </div>
+
+      <div class="status" id="status">대기 중...</div>
+    </div>
+  </div>
+
+  <script>
+    const SHEET_INDEX = 0;
+
+    const SOURCE_ROW_START = 1;
+    const SOURCE_ROW_END = 2;
+    const SOURCE_COL_START = 1;   // A
+    const SOURCE_COL_END = 12;    // L
+
+    const mappings = [
+      { inputId: 'shortTotalFile', targetStartRow: 3,  targetStartCol: 1,  label: '숏 전체결과', targetRangeText: 'A3:L4' },
+      { inputId: 'short1File',     targetStartRow: 3,  targetStartCol: 29, label: '숏 1차 최적화', targetRangeText: 'AC3:AN4' },
+      { inputId: 'short2File',     targetStartRow: 3,  targetStartCol: 49, label: '숏 2차 최적화', targetRangeText: 'AW3:BH4' },
+      { inputId: 'longTotalFile',  targetStartRow: 29, targetStartCol: 1,  label: '롱 전체결과', targetRangeText: 'A29:L30' },
+      { inputId: 'long1File',      targetStartRow: 29, targetStartCol: 29, label: '롱 1차 최적화', targetRangeText: 'AC29:AN30' },
+      { inputId: 'long2File',      targetStartRow: 29, targetStartCol: 49, label: '롱 2차 최적화', targetRangeText: 'AW29:BH30' }
+    ];
+
+    function setStatus(message) {
+      document.getElementById('status').textContent = message;
+    }
+
+    function readFileAsArrayBuffer(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    async function loadWorkbookFromFile(file) {
+      const buffer = await readFileAsArrayBuffer(file);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      return workbook;
+    }
+
+    function getFirstWorksheet(workbook) {
+      return workbook.worksheets[SHEET_INDEX];
+    }
+
+    function deepClone(obj) {
+      return obj ? JSON.parse(JSON.stringify(obj)) : obj;
+    }
+
+    function copyCellValueAndBasicStyle(srcCell, dstCell) {
+      dstCell.value = srcCell.value;
+      if (srcCell.numFmt) dstCell.numFmt = srcCell.numFmt;
+      if (srcCell.font) dstCell.font = deepClone(srcCell.font);
+      if (srcCell.alignment) dstCell.alignment = deepClone(srcCell.alignment);
+      if (srcCell.border) dstCell.border = deepClone(srcCell.border);
+      if (srcCell.fill) dstCell.fill = deepClone(srcCell.fill);
+      if (srcCell.protection) dstCell.protection = deepClone(srcCell.protection);
+    }
+
+    async function copyRangeFromSourceFileToTemplate(sourceFile, templateSheet, targetStartRow, targetStartCol, label) {
+      if (!sourceFile) throw new Error(label + ' 파일이 비어 있습니다.');
+
+      const srcWorkbook = await loadWorkbookFromFile(sourceFile);
+      const srcSheet = getFirstWorksheet(srcWorkbook);
+
+      for (let row = SOURCE_ROW_START; row <= SOURCE_ROW_END; row++) {
+        for (let col = SOURCE_COL_START; col <= SOURCE_COL_END; col++) {
+          const srcCell = srcSheet.getCell(row, col);
+          const dstRow = targetStartRow + (row - SOURCE_ROW_START);
+          const dstCol = targetStartCol + (col - SOURCE_COL_START);
+          const dstCell = templateSheet.getCell(dstRow, dstCol);
+          copyCellValueAndBasicStyle(srcCell, dstCell);
+        }
+      }
+    }
+
+    function updateMetricTexts(sheet, lDefense, sDefense, expectedLoss) {
+      const targets = [
+        ['A1',  `L방어폭 : ${lDefense}`],
+        ['B1',  `S방어폭 : ${sDefense}`],
+        ['C1',  `예상손절금 : ${expectedLoss}`],
+        ['AC1', `L방어폭 : ${lDefense}`],
+        ['AD1', `S방어폭 : ${sDefense}`],
+        ['AE1', `예상손절금 : ${expectedLoss}`],
+        ['AW1', `L방어폭 : ${lDefense}`],
+        ['AX1', `S방어폭 : ${sDefense}`],
+        ['AY1', `예상손절금 : ${expectedLoss}`]
+      ];
+      targets.forEach(([addr, value]) => {
+        sheet.getCell(addr).value = value;
+      });
+    }
+
+    function updateTitles(sheet, shortTitle, longTitle) {
+      sheet.getCell('A2').value = shortTitle;
+      sheet.getCell('AC2').value = `1차 필터링 ${shortTitle}`;
+      sheet.getCell('AW2').value = `2차 필터링 ${shortTitle}`;
+
+      sheet.getCell('A28').value = longTitle;
+      sheet.getCell('AC28').value = `1차 필터링 ${longTitle}`;
+      sheet.getCell('AW28').value = `2차 필터링 ${longTitle}`;
+    }
+
+    function getLastUsedRow(sheet) {
+      let last = sheet.rowCount || 1;
+      while (last > 1) {
+        const row = sheet.getRow(last);
+        const hasValue = row.values && row.values.some(v => v !== null && v !== undefined && v !== '');
+        if (hasValue) return last;
+        last--;
+      }
+      return 1;
+    }
+
+    function readLossSummaryRows(srcSheet) {
+      const rows = [];
+      const lastRow = getLastUsedRow(srcSheet);
+
+      for (let r = 1; r <= lastRow; r++) {
+        const rowValues = [];
+        let hasSomething = false;
+
+        for (let c = 1; c <= 8; c++) {
+          const cell = srcSheet.getCell(r, c);
+          rowValues.push({
+            value: cell.value,
+            numFmt: cell.numFmt,
+            font: deepClone(cell.font),
+            alignment: deepClone(cell.alignment),
+            border: deepClone(cell.border),
+            fill: deepClone(cell.fill),
+            protection: deepClone(cell.protection)
+          });
+          if (cell.value !== null && cell.value !== undefined && cell.value !== '') {
+            hasSomething = true;
+          }
+        }
+
+        if (hasSomething) {
+          rows.push(rowValues);
+        }
+      }
+
+      return rows;
+    }
+
+    function clearBlock(sheet, startRow, startCol, width, clearRows) {
+      for (let r = startRow; r < startRow + clearRows; r++) {
+        for (let c = startCol; c < startCol + width; c++) {
+          const cell = sheet.getCell(r, c);
+          cell.value = null;
+        }
+      }
+    }
+
+    function writePreparedRows(sheet, preparedRows, startRow, startCol, width) {
+      for (let r = 0; r < preparedRows.length; r++) {
+        const rowData = preparedRows[r];
+        for (let c = 0; c < width; c++) {
+          const src = rowData[c];
+          const dst = sheet.getCell(startRow + r, startCol + c);
+          dst.value = src?.value ?? null;
+          if (src?.numFmt) dst.numFmt = src.numFmt;
+          if (src?.font) dst.font = deepClone(src.font);
+          if (src?.alignment) dst.alignment = deepClone(src.alignment);
+          if (src?.border) dst.border = deepClone(src.border);
+          if (src?.fill) dst.fill = deepClone(src.fill);
+          if (src?.protection) dst.protection = deepClone(src.protection);
+        }
+      }
+    }
+
+    async function applyLossSummaryFile(lossSummaryFile, templateSheet) {
+      if (!lossSummaryFile) {
+        return { applied: false, log: '- 손절요약 파일: 생략됨' };
+      }
+
+      const workbook = await loadWorkbookFromFile(lossSummaryFile);
+      const srcSheet = getFirstWorksheet(workbook);
+      const sourceRows = readLossSummaryRows(srcSheet);
+
+      if (sourceRows.length === 0) {
+        throw new Error('손절요약 파일에 읽을 데이터가 없습니다.');
+      }
+
+      const header = sourceRows[0];
+      const dataRows = sourceRows.slice(1);
+
+      const leftRows = [header, ...dataRows.map(row => row.slice(0, 8))];
+
+      const middleData = dataRows
+        .filter(row => {
+          const count = Number(row[1]?.value ?? 0);
+          return count === 1 || count === 0;
+        })
+        .map(row => row.slice(0, 4));
+
+      const rightData = dataRows
+        .filter(row => Number(row[1]?.value ?? 0) === 0)
+        .map(row => row.slice(0, 2));
+
+      const middleHeader = header.slice(0, 4);
+      const rightHeader = header.slice(0, 2);
+
+      const middleRows = [middleHeader, ...middleData];
+      const rightRows = [rightHeader, ...rightData];
+
+      const clearRows = Math.max(
+        sourceRows.length + 50,
+        middleRows.length + 50,
+        rightRows.length + 50,
+        200
+      );
+
+      clearBlock(templateSheet, 3, 15, 8, clearRows);   // O:V
+      clearBlock(templateSheet, 3, 43, 4, clearRows);   // AQ:AT
+      clearBlock(templateSheet, 3, 62, 2, clearRows);   // BJ:BK
+
+      writePreparedRows(templateSheet, leftRows, 3, 15, 8);
+      writePreparedRows(templateSheet, middleRows, 3, 43, 4);
+      writePreparedRows(templateSheet, rightRows, 3, 62, 2);
+
+      return {
+        applied: true,
+        log:
+          `- 손절요약 파일 반영 완료\n` +
+          `  · 전체 복붙: O3:V${2 + leftRows.length}\n` +
+          `  · 손절 1,0개: AQ3:AT${2 + middleRows.length}\n` +
+          `  · 손절 0개: BJ3:BK${2 + rightRows.length}`
+      };
+    }
+
+    async function generateExcel() {
+      try {
+        const templateFile = document.getElementById('templateFile').files[0];
+        if (!templateFile) {
+          throw new Error('전체 결과 템플릿 파일을 먼저 넣어주세요.');
+        }
+
+        setStatus('템플릿 불러오는 중...');
+
+        const templateWorkbook = await loadWorkbookFromFile(templateFile);
+        const templateSheet = getFirstWorksheet(templateWorkbook);
+
+        const lDefense = document.getElementById('lDefense').value.trim();
+        const sDefense = document.getElementById('sDefense').value.trim();
+        const expectedLoss = document.getElementById('expectedLoss').value.trim();
+        const shortTitle = document.getElementById('shortTitle').value.trim();
+        const longTitle = document.getElementById('longTitle').value.trim();
+
+        updateMetricTexts(templateSheet, lDefense, sDefense, expectedLoss);
+        updateTitles(templateSheet, shortTitle, longTitle);
+
+        let logs = [];
+
+        for (const map of mappings) {
+          const file = document.getElementById(map.inputId).files[0];
+          setStatus(`${map.label} 처리 중...`);
+          await copyRangeFromSourceFileToTemplate(file, templateSheet, map.targetStartRow, map.targetStartCol, map.label);
+          logs.push(`- ${map.label}: ${map.targetRangeText} 반영 완료`);
+        }
+
+        setStatus('손절요약 파일 처리 중...');
+        const lossSummaryFile = document.getElementById('lossSummaryFile').files[0];
+        const lossResult = await applyLossSummaryFile(lossSummaryFile, templateSheet);
+        logs.push(lossResult.log);
+
+        setStatus('새 엑셀 파일 생성 중...');
+
+        const outputBuffer = await templateWorkbook.xlsx.writeBuffer();
+        const blob = new Blob(
+          [outputBuffer],
+          { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+        );
+
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mm = String(now.getMinutes()).padStart(2, '0');
+
+        saveAs(blob, `전체결과_자동정리_${y}${m}${d}_${hh}${mm}.xlsx`);
+
+        setStatus(
+          '완료되었습니다.\n\n' +
+          logs.join('\n') +
+          '\n\n제목 / 방어폭 / 예상손절금도 함께 반영되었습니다.'
+        );
+      } catch (error) {
+        console.error(error);
+        setStatus('오류가 발생했습니다.\n' + error.message);
+      }
+    }
+
+    document.getElementById('runBtn').addEventListener('click', generateExcel);
+
+    document.getElementById('fillSampleBtn').addEventListener('click', () => {
+      document.getElementById('lDefense').value = '50.73%';
+      document.getElementById('sDefense').value = '79.59%';
+      document.getElementById('expectedLoss').value = '2394';
+      document.getElementById('shortTitle').value = '15DCA-20S v1.0.1';
+      document.getElementById('longTitle').value = '15DCA-20L v1.0.1';
+      setStatus('샘플 값으로 되돌렸습니다.');
+    });
+  </script>
+</body>
+</html>
