@@ -200,7 +200,8 @@
           <input id="lossSummaryFile" type="file" accept=".xlsx,.xlsm,.xls" />
           <div class="hint">
             손절요약은 왼쪽에는 <b>원본 그대로 전체 복붙</b>,<br>
-            중간은 <b>손절횟수 1 이하만 오름차순</b>, 오른쪽은 <b>손절횟수 0만 오름차순</b>으로 자동 정리합니다.
+            중간은 <b>손절횟수 1 이하만</b>, 오른쪽은 <b>손절횟수 0만</b> 자동 정리합니다.<br>
+            정렬 기준은 <b>빨간 글씨 우선</b> + <b>손절횟수 내림차순</b>입니다.
           </div>
         </div>
         <div>
@@ -366,6 +367,7 @@
     }
 
 
+
     function getLastUsedRow(sheet) {
       let last = sheet.rowCount || 1;
       while (last > 1) {
@@ -387,8 +389,16 @@
 
         for (let c = 1; c <= 8; c++) {
           const cell = srcSheet.getCell(r, c);
+          let value = cell.value;
+
+          // 손절횟수 열은 확실하게 숫자로 변환
+          if (c === 2) {
+            const num = Number(value);
+            if (Number.isFinite(num)) value = num;
+          }
+
           rowCells.push({
-            value: cell.value,
+            value,
             numFmt: cell.numFmt,
             font: deepClone(cell.font),
             alignment: deepClone(cell.alignment),
@@ -397,7 +407,7 @@
             protection: deepClone(cell.protection)
           });
 
-          if (cell.value !== null && cell.value !== undefined && cell.value !== '') {
+          if (value !== null && value !== undefined && value !== '') {
             hasSomething = true;
           }
         }
@@ -421,11 +431,36 @@
       return Number.isFinite(num) ? num : 0;
     }
 
-    function sortRowsByLossCountAsc(rows) {
+    function getFontArgbFromRow(row) {
+      const argb = row?.[0]?.font?.color?.argb || row?.[0]?.font?.color?.rgb || '';
+      return String(argb || '').toUpperCase();
+    }
+
+    function getColorPriority(row) {
+      const argb = getFontArgbFromRow(row);
+
+      // 빨간색이 가장 위로
+      if (argb.includes('CC0000') || argb.includes('FF0000') || argb.includes('C00000')) {
+        return 2;
+      }
+
+      // 초록색은 그 다음
+      if (argb.includes('006600') || argb.includes('008000') || argb.includes('00B050') || argb.includes('00AA00')) {
+        return 1;
+      }
+
+      return 0;
+    }
+
+    function sortRowsForFilteredBlocks(rows) {
       return [...rows].sort((a, b) => {
+        const colorA = getColorPriority(a);
+        const colorB = getColorPriority(b);
+        if (colorA !== colorB) return colorB - colorA; // 빨간색 우선
+
         const countA = getLossCountFromRow(a);
         const countB = getLossCountFromRow(b);
-        if (countA !== countB) return countA - countB;
+        if (countA !== countB) return countB - countA; // 손절횟수 내림차순
 
         const nameA = normalizeText(a?.[0]?.value);
         const nameB = normalizeText(b?.[0]?.value);
@@ -435,8 +470,8 @@
 
     function clearBlock(sheet, startRow, startCol, width, clearRows) {
       for (let r = startRow; r < startRow + clearRows; r++) {
-        for (let c = startCol; c < startCol + width; c++) {
-          const cell = sheet.getCell(r, startCol + (c - startCol));
+        for (let c = 0; c < width; c++) {
+          const cell = sheet.getCell(r, startCol + c);
           cell.value = null;
         }
       }
@@ -467,11 +502,11 @@
             ref,
             rules: [{
               type: 'dataBar',
-              cfvo: [{ type: 'min' }, { type: 'max' }],
+              cfvo: [{ type: 'num', value: 0 }, { type: 'max' }],
               color,
               showValue: true,
-              border: false,
-              gradient: true
+              border: true,
+              gradient: false
             }]
           });
         }
@@ -496,16 +531,16 @@
       const header = sourceRows[0];
       const dataRows = sourceRows.slice(1);
 
-      // 왼쪽: 손절요약 파일 그대로 전체 복붙
+      // 왼쪽: 손절요약 파일 원본 그대로 전체 복붙
       const leftRows = [header, ...dataRows.map(row => row.slice(0, 8))];
 
-      // 중간: 손절횟수 1 이하만, 오름차순 정렬
-      const middleFiltered = sortRowsByLossCountAsc(
+      // 중간: 손절횟수 1 이하만, 빨간 글씨 우선 + 손절횟수 내림차순
+      const middleFiltered = sortRowsForFilteredBlocks(
         dataRows.filter(row => getLossCountFromRow(row) <= 1)
       ).map(row => row.slice(0, 4));
 
-      // 오른쪽: 손절횟수 0만, 오름차순 정렬
-      const rightFiltered = sortRowsByLossCountAsc(
+      // 오른쪽: 손절횟수 0만, 빨간 글씨 우선 + 손절횟수 내림차순
+      const rightFiltered = sortRowsForFilteredBlocks(
         dataRows.filter(row => getLossCountFromRow(row) === 0)
       ).map(row => row.slice(0, 2));
 
@@ -514,30 +549,30 @@
 
       const clearRows = Math.max(leftRows.length, middleRows.length, rightRows.length, 1000) + 20;
 
-      // 왼쪽 O:V / 중간 AQ:AT / 오른쪽 BJ:BK
-      clearBlock(templateSheet, 3, 15, 8, clearRows);
-      clearBlock(templateSheet, 3, 43, 4, clearRows);
-      clearBlock(templateSheet, 3, 62, 2, clearRows);
+      clearBlock(templateSheet, 3, 15, 8, clearRows); // O:V
+      clearBlock(templateSheet, 3, 43, 4, clearRows); // AQ:AT
+      clearBlock(templateSheet, 3, 62, 2, clearRows); // BJ:BK
 
       writePreparedRows(templateSheet, leftRows, 3, 15, 8);
       writePreparedRows(templateSheet, middleRows, 3, 43, 4);
       writePreparedRows(templateSheet, rightRows, 3, 62, 2);
 
-      // 막대그래프가 보이도록 손절횟수 열에 조건부 서식 추가
       const leftEndRow = 2 + leftRows.length;
       const middleEndRow = 2 + middleRows.length;
       const rightEndRow = 2 + rightRows.length;
 
-      addDataBarIfPossible(templateSheet, `P4:P${leftEndRow}`, 'FFFF6B6B');
-      addDataBarIfPossible(templateSheet, `AR4:AR${middleEndRow}`, 'FFFF6B6B');
-      addDataBarIfPossible(templateSheet, `BK4:BK${rightEndRow}`, 'FFFF6B6B');
+      // 막대그래프 강제 적용
+      addDataBarIfPossible(templateSheet, `P4:P${leftEndRow}`, 'FFFF8A8A');
+      addDataBarIfPossible(templateSheet, `AR4:AR${middleEndRow}`, 'FFFF8A8A');
+      addDataBarIfPossible(templateSheet, `BK4:BK${rightEndRow}`, 'FFFF8A8A');
 
       return (
         '- 손절요약 파일 반영 완료\n' +
         `  · 왼쪽 전체 복붙: ${leftRows.length - 1}개\n` +
         `  · 중간 손절횟수 1 이하: ${middleRows.length - 1}개\n` +
         `  · 오른쪽 손절횟수 0: ${rightRows.length - 1}개\n` +
-        '  · 중간/오른쪽 영역은 손절횟수 기준 오름차순 정렬 적용'
+        '  · 중간/오른쪽은 빨간 글씨 우선 + 손절횟수 내림차순 정렬 적용\n' +
+        '  · 손절횟수 열 데이터바(빨간 막대그래프) 다시 적용'
       );
     }
 
@@ -590,7 +625,7 @@
         setStatus(
           '완료되었습니다.\n\n' +
           logs.join('\n') +
-          '\n\n기본 템플릿 사용 / % 자동 표기 / 손절요약 전체복붙 + 조건필터 + 오름차순 정리까지 적용되었습니다.'
+          '\n\n기본 템플릿 사용 / % 자동 표기 / 손절요약 전체복붙 + 빨간 글씨 우선 + 손절횟수 내림차순 정리까지 적용되었습니다.'
         );
       } catch (error) {
         console.error(error);
