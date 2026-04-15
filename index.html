@@ -199,8 +199,8 @@
           <label for="lossSummaryFile">손절요약 파일</label>
           <input id="lossSummaryFile" type="file" accept=".xlsx,.xlsm,.xls" />
           <div class="hint">
-            손절요약은 이제 행 위치를 고정해서 넣지 않고,<br>
-            기본 템플릿 안에 들어 있는 <b>Group Name 위치를 기준</b>으로 맞춰서 채웁니다.
+            손절요약은 왼쪽에는 <b>원본 그대로 전체 복붙</b>,<br>
+            중간은 <b>손절횟수 1 이하만 오름차순</b>, 오른쪽은 <b>손절횟수 0만 오름차순</b>으로 자동 정리합니다.
           </div>
         </div>
         <div>
@@ -365,15 +365,26 @@
       sheet.getCell('AW28').value = `2차 필터링 ${longTitle}`;
     }
 
-    function buildLossSummarySourceMap(srcSheet) {
-      const map = new Map();
-      const lastRow = srcSheet.rowCount || 1;
 
-      for (let r = 2; r <= lastRow; r++) {
-        const groupName = srcSheet.getCell(r, 1).value;
-        if (!groupName || typeof groupName !== 'string') continue;
+    function getLastUsedRow(sheet) {
+      let last = sheet.rowCount || 1;
+      while (last > 1) {
+        const row = sheet.getRow(last);
+        const hasValue = row.values && row.values.some(v => v !== null && v !== undefined && v !== '');
+        if (hasValue) return last;
+        last--;
+      }
+      return 1;
+    }
 
+    function readLossSummaryRows(srcSheet) {
+      const lastRow = getLastUsedRow(srcSheet);
+      const rows = [];
+
+      for (let r = 1; r <= lastRow; r++) {
         const rowCells = [];
+        let hasSomething = false;
+
         for (let c = 1; c <= 8; c++) {
           const cell = srcSheet.getCell(r, c);
           rowCells.push({
@@ -385,34 +396,59 @@
             fill: deepClone(cell.fill),
             protection: deepClone(cell.protection)
           });
+
+          if (cell.value !== null && cell.value !== undefined && cell.value !== '') {
+            hasSomething = true;
+          }
         }
-        map.set(groupName, rowCells);
+
+        if (hasSomething) {
+          rows.push(rowCells);
+        }
       }
 
-      return map;
+      return rows;
     }
 
-    function applyRowDataToTemplateByGroup(templateSheet, sourceMap, targetGroupCol, startRow, endRow, width) {
-      let appliedCount = 0;
+    function normalizeText(value) {
+      if (value === null || value === undefined) return '';
+      return String(value).trim();
+    }
 
-      for (let r = startRow; r <= endRow; r++) {
-        const groupCell = templateSheet.getCell(r, targetGroupCol);
-        const groupName = groupCell.value;
+    function getLossCountFromRow(row) {
+      const raw = row?.[1]?.value;
+      const num = Number(raw);
+      return Number.isFinite(num) ? num : 0;
+    }
 
-        if (!groupName || typeof groupName !== 'string') continue;
+    function sortRowsByLossCountAsc(rows) {
+      return [...rows].sort((a, b) => {
+        const countA = getLossCountFromRow(a);
+        const countB = getLossCountFromRow(b);
+        if (countA !== countB) return countA - countB;
 
-        const rowData = sourceMap.get(groupName);
-        if (!rowData) {
-          // group name 위치는 유지하고, 나머지 값만 비움
-          for (let c = 1; c < width; c++) {
-            templateSheet.getCell(r, targetGroupCol + c).value = null;
-          }
-          continue;
+        const nameA = normalizeText(a?.[0]?.value);
+        const nameB = normalizeText(b?.[0]?.value);
+        return nameA.localeCompare(nameB);
+      });
+    }
+
+    function clearBlock(sheet, startRow, startCol, width, clearRows) {
+      for (let r = startRow; r < startRow + clearRows; r++) {
+        for (let c = startCol; c < startCol + width; c++) {
+          const cell = sheet.getCell(r, startCol + (c - startCol));
+          cell.value = null;
         }
+      }
+    }
 
-        for (let i = 0; i < width; i++) {
-          const src = rowData[i];
-          const dst = templateSheet.getCell(r, targetGroupCol + i);
+    function writePreparedRows(sheet, preparedRows, startRow, startCol, width) {
+      for (let r = 0; r < preparedRows.length; r++) {
+        const rowData = preparedRows[r];
+        for (let c = 0; c < width; c++) {
+          const src = rowData[c];
+          const dst = sheet.getCell(startRow + r, startCol + c);
+
           dst.value = src?.value ?? null;
           if (src?.numFmt) dst.numFmt = src.numFmt;
           if (src?.font) dst.font = deepClone(src.font);
@@ -421,11 +457,7 @@
           if (src?.fill) dst.fill = deepClone(src.fill);
           if (src?.protection) dst.protection = deepClone(src.protection);
         }
-
-        appliedCount++;
       }
-
-      return appliedCount;
     }
 
     function addDataBarIfPossible(sheet, ref, color) {
@@ -455,21 +487,57 @@
 
       const workbook = await loadWorkbookFromFile(lossSummaryFile);
       const srcSheet = getFirstWorksheet(workbook);
-      const sourceMap = buildLossSummarySourceMap(srcSheet);
 
-      const leftApplied = applyRowDataToTemplateByGroup(templateSheet, sourceMap, 15, 4, 961, 8);   // O:V
-      const middleApplied = applyRowDataToTemplateByGroup(templateSheet, sourceMap, 43, 4, 961, 4); // AQ:AT
-      const rightApplied = applyRowDataToTemplateByGroup(templateSheet, sourceMap, 62, 4, 961, 2);  // BJ:BK
+      const sourceRows = readLossSummaryRows(srcSheet);
+      if (sourceRows.length === 0) {
+        throw new Error('손절요약 파일에 읽을 데이터가 없습니다.');
+      }
 
-      addDataBarIfPossible(templateSheet, 'P4:P961', 'FFFF6B6B');
-      addDataBarIfPossible(templateSheet, 'AR4:AR961', 'FFFF6B6B');
-      addDataBarIfPossible(templateSheet, 'BK4:BK961', 'FFFF6B6B');
+      const header = sourceRows[0];
+      const dataRows = sourceRows.slice(1);
+
+      // 왼쪽: 손절요약 파일 그대로 전체 복붙
+      const leftRows = [header, ...dataRows.map(row => row.slice(0, 8))];
+
+      // 중간: 손절횟수 1 이하만, 오름차순 정렬
+      const middleFiltered = sortRowsByLossCountAsc(
+        dataRows.filter(row => getLossCountFromRow(row) <= 1)
+      ).map(row => row.slice(0, 4));
+
+      // 오른쪽: 손절횟수 0만, 오름차순 정렬
+      const rightFiltered = sortRowsByLossCountAsc(
+        dataRows.filter(row => getLossCountFromRow(row) === 0)
+      ).map(row => row.slice(0, 2));
+
+      const middleRows = [header.slice(0, 4), ...middleFiltered];
+      const rightRows = [header.slice(0, 2), ...rightFiltered];
+
+      const clearRows = Math.max(leftRows.length, middleRows.length, rightRows.length, 1000) + 20;
+
+      // 왼쪽 O:V / 중간 AQ:AT / 오른쪽 BJ:BK
+      clearBlock(templateSheet, 3, 15, 8, clearRows);
+      clearBlock(templateSheet, 3, 43, 4, clearRows);
+      clearBlock(templateSheet, 3, 62, 2, clearRows);
+
+      writePreparedRows(templateSheet, leftRows, 3, 15, 8);
+      writePreparedRows(templateSheet, middleRows, 3, 43, 4);
+      writePreparedRows(templateSheet, rightRows, 3, 62, 2);
+
+      // 막대그래프가 보이도록 손절횟수 열에 조건부 서식 추가
+      const leftEndRow = 2 + leftRows.length;
+      const middleEndRow = 2 + middleRows.length;
+      const rightEndRow = 2 + rightRows.length;
+
+      addDataBarIfPossible(templateSheet, `P4:P${leftEndRow}`, 'FFFF6B6B');
+      addDataBarIfPossible(templateSheet, `AR4:AR${middleEndRow}`, 'FFFF6B6B');
+      addDataBarIfPossible(templateSheet, `BK4:BK${rightEndRow}`, 'FFFF6B6B');
 
       return (
         '- 손절요약 파일 반영 완료\n' +
-        `  · 전체 영역 매칭 반영: ${leftApplied}개\n` +
-        `  · 손절 1/0 영역 매칭 반영: ${middleApplied}개\n` +
-        `  · 손절 0 영역 매칭 반영: ${rightApplied}개`
+        `  · 왼쪽 전체 복붙: ${leftRows.length - 1}개\n` +
+        `  · 중간 손절횟수 1 이하: ${middleRows.length - 1}개\n` +
+        `  · 오른쪽 손절횟수 0: ${rightRows.length - 1}개\n` +
+        '  · 중간/오른쪽 영역은 손절횟수 기준 오름차순 정렬 적용'
       );
     }
 
@@ -522,7 +590,7 @@
         setStatus(
           '완료되었습니다.\n\n' +
           logs.join('\n') +
-          '\n\n기본 템플릿 사용 / % 자동 표기 / 손절요약 그룹명 기준 매칭 반영까지 적용되었습니다.'
+          '\n\n기본 템플릿 사용 / % 자동 표기 / 손절요약 전체복붙 + 조건필터 + 오름차순 정리까지 적용되었습니다.'
         );
       } catch (error) {
         console.error(error);
